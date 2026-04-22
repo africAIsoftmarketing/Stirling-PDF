@@ -20,7 +20,6 @@ jobs:
   build-jar:
     name: Build Spring Boot JAR
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,7 +45,9 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm run build
+          npx vite build --emptyOutDir
+        env:
+          NODE_ENV: production
 
       - name: Build bootJar with Gradle
         run: ./gradlew bootJar --no-daemon -x test
@@ -55,7 +56,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stirling-pdf-jar
-          # Ajuster le chemin si le JAR est dans un sous-module (ex: app/core/build/libs/)
           path: |
             build/libs/*.jar
             app/core/build/libs/*.jar
@@ -72,17 +72,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: aarch64   # Apple Silicon
+          - arch: aarch64
             runner: macos-latest
             target: aarch64-apple-darwin
             jre_os: mac
             jre_arch: aarch64
-          - arch: x86_64    # Intel
+          - arch: x86_64
             runner: macos-13
             target: x86_64-apple-darwin
             jre_os: mac
             jre_arch: x64
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -95,7 +94,6 @@ jobs:
           name: stirling-pdf-jar
           path: frontend/src-tauri/resources/
 
-      # Renommer le JAR en nom stable attendu par Tauri
       - name: Rename JAR
         run: |
           JAR=$(find frontend/src-tauri/resources -name "*.jar" | head -1)
@@ -107,15 +105,14 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # Créer un JRE minimal avec jlink pour bundler dans l'app
       - name: Create minimal JRE with jlink
         run: |
           JLINK=$JAVA_HOME/bin/jlink
           $JLINK \
             --add-modules java.base,java.compiler,java.desktop,java.instrument,\
-          java.logging,java.management,java.naming,java.net.http,java.prefs,\
-          java.rmi,java.scripting,java.security.jgss,java.sql,\
-          jdk.crypto.ec,jdk.unsupported \
+            java.logging,java.management,java.naming,java.net.http,java.prefs,\
+            java.rmi,java.scripting,java.security.jgss,java.sql,\
+            jdk.crypto.ec,jdk.unsupported \
             --strip-debug \
             --no-man-pages \
             --no-header-files \
@@ -166,12 +163,8 @@ jobs:
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          tauri build --target ${{ matrix.target }}
+          npx @tauri-apps/cli build --target ${{ matrix.target }}
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -189,7 +182,6 @@ jobs:
     name: Build Windows (x86_64)
     needs: build-jar
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -248,18 +240,12 @@ jobs:
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@latest
 
-      # WebView2 est déjà présent sur windows-latest, sinon :
-      # - name: Install WebView2
-      #   run: |
-      #     Invoke-WebRequest -Uri https://go.microsoft.com/fwlink/p/?LinkId=2124703 -OutFile webview2.exe
-      #     Start-Process webview2.exe -Args "/silent /install" -Wait
-
       - name: Build Tauri app (Windows)
         working-directory: frontend
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-        run: tauri build
+        run: npx @tauri-apps/cli build
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -280,13 +266,13 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
-
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
           pattern: stirling-pdf-*
+          merge-multiple: true
 
       - name: List release files
         run: find dist/ -type f
