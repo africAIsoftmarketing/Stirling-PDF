@@ -1,0 +1,92 @@
+name: Build macOS Desktop App
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'frontend/src-tauri/**'
+      - 'frontend/package*.json'
+      - 'Taskfile.yml'
+      - '.taskfiles/desktop.yml'
+      - '.github/workflows/build-macos.yml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DISABLE_ADDITIONAL_FEATURES: true
+
+jobs:
+  build-macos:
+    name: Build macOS (${{ matrix.arch }})
+    runs-on: macos-14
+    strategy:
+      matrix:
+        arch:
+          - { target: aarch64-apple-darwin, name: apple-silicon }
+          - { target: x86_64-apple-darwin, name: intel }
+      fail-fast: false
+    timeout-minutes: 60
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch.target }}
+
+      - name: ☕ Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: 🐘 Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: 📦 Install Task
+        uses: go-task/setup-task@v2
+
+      - name: 🍎 Install macOS dependencies
+        run: brew install create-dmg
+
+      - name: 🔨 Prepare desktop build
+        run: task desktop:prepare
+
+      - name: 🏗️ Build Tauri App
+        uses: tauri-apps/tauri-action@v0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🔒 Secrets optionnels pour la signature & notarisation Apple
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: ./frontend
+          tauriScript: npx tauri
+          args: --target ${{ matrix.arch.target }} --bundles dmg
+
+      - name: 📦 Organize artifacts
+        run: |
+          mkdir -p dist
+          find frontend/src-tauri/target -name "*.dmg" -exec cp {} dist/Stirling-PDF-macos-${{ matrix.arch.name }}.dmg \;
+
+      - name: 📤 Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stirling-PDF-macos-${{ matrix.arch.name }}
+          path: dist/*.dmg
+          retention-days: 7
